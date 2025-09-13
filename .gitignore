@@ -1,0 +1,22 @@
+# Ignore the following files and directories
+## Temporary directories
+
+## Data directories
+/orchestration/authentik
+/orchestration/traefik/acme/
+/projects/
+/services/
+/vault/
+
+## Logs
+*.log
+
+
+## Hidden files
+.env
+
+
+# Explicitly allow the following files and directories
+## Config files
+!/docker/traefik/conf/header.yml
+!/docker/traefik/traefik.yml

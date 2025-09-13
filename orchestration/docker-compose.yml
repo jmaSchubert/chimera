@@ -1,0 +1,226 @@
+volumes:
+  database:
+    driver: local
+  redis:
+    driver: local
+  portainer_data:
+    driver: local
+
+networks:
+  backend:
+    external: true
+  frontend:
+    external: true
+
+services:
+  # general services
+  traefik:
+    image: ${TRAEFIK_IMAGE}
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ./traefik/conf:/etc/traefik/conf/
+      - ./traefik/acme:/acme
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=authentik@file"
+    networks:
+      - frontend
+      - backend
+
+  postgresql:
+    container_name: authentik-db
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${AUTHENTIK_DB_NAME}
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      POSTGRES_USER: ${AUTHENTIK_DB_USER}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 20s
+      test:
+        - CMD-SHELL
+        - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      timeout: 5s
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  redis:
+    container_name: authentik-cache
+    command: --save 60 1 --loglevel warning
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 20s
+      test:
+        - CMD-SHELL
+        - redis-cli ping | grep PONG
+      timeout: 3s
+    image: docker.io/library/redis:alpine
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    networks:
+      - backend
+
+
+  server:
+    container_name: authentik-server
+    command: server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER}
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: true
+    image: ${AUTHENTIK_IMAGE}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authentik-server.rule=Host(`authentik.${DOMAIN}`)"
+      - "traefik.http.routers.authentik-server.entrypoints=web"
+      - "traefik.http.services.authentik-server.loadBalancer.server.port=9000"
+    restart: unless-stopped
+    volumes:
+      - ./authentik/media:/media
+      - ./authentik/custom-templates:/templates
+    networks:
+      - frontend
+      - backend
+
+
+  worker:
+    container_name: authentik-worker
+    command: worker
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER}
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+    image: ${AUTHENTIK_IMAGE}
+    restart: unless-stopped
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./authentik/media:/media
+      - ./authentik/certs:/certs
+      - ./authentik/custom-templates:/templates
+    networks:
+      - backend
+
+  portainer:
+    image: ${PORTAINER_IMAGE}
+    container_name: portainer
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
+      - "traefik.http.routers.portainer.entrypoints=web"
+      - "traefik.http.services.portainer.loadBalancer.server.port=9000"
+      - "traefik.http.routers.portainer.middlewares=authentik@file"
+    networks:
+      - frontend
+      - backend
+
+  # jupyterlab:
+  #   image: jupyter/base-notebook:python-3.11
+  #   container_name: jupyterlab
+  #   restart: unless-stopped
+  #   environment:
+  #     JUPYTER_ENABLE_LAB: "yes"
+  #     GRANT_SUDO: "yes"
+  #   volumes:
+  #     - ./vault:/home/jovyan/work
+  #     - ./services/jupyterlab/config:/home/jovyan/.jupyter
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.jupyter.rule=Host(`jupyter.${DOMAIN}`)"
+  #     - "traefik.http.routers.jupyter.entrypoints=websecure"
+  #     - "traefik.http.routers.jupyter.tls=true"
+  #     - "traefik.http.routers.jupyter.middlewares=auth@docker"
+  #   networks:
+  #     - hubnet
+
+  # kanban:
+  #   build:
+  #     context: ./services/kanban
+  #     dockerfile: Dockerfile
+  #   container_name: kanban
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./services/kanban:/app:cached
+  #     - /app/node_modules
+  #     - ./vault:/vault:ro
+  #   environment:
+  #     - CHOKIDAR_USEPOLLING=true
+  #     - NEXT_PUBLIC_API_URL=http://indexer:4000
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.kanban.rule=Host(`kanban.${DOMAIN}`)"
+  #     - "traefik.http.routers.kanban.entrypoints=websecure"
+  #     - "traefik.http.routers.kanban.tls=true"
+  #     - "traefik.http.routers.kanban.middlewares=auth@docker"
+  #   networks:
+  #     - hubnet
+  #   depends_on:
+  #     - indexer
+
+  # gitea:
+  #   image: gitea/gitea:latest
+  #   container_name: gitea
+  #   restart: unless-stopped
+  #   environment:
+  #     - USER_UID=1000
+  #     - USER_GID=1000
+  #   volumes:
+  #     - ./data/gitea:/data
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.gitea.rule=Host(`gitea.${DOMAIN}`)"
+  #     - "traefik.http.routers.gitea.entrypoints=websecure"
+  #     - "traefik.http.routers.gitea.tls=true"
+  #     - "traefik.http.routers.gitea.middlewares=auth@docker"
+  #   networks:
+  #     - hubnet
+
+
+  # websites
+
+
