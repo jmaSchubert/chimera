@@ -1,0 +1,48 @@
+services:
+  # --- Joplin ---
+  joplin:
+    image: joplin/server:3.4.3
+    container_name: joplin-prototype
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=joplin-db-prototype
+      - POSTGRES_PORT=5432
+      - POSTGRES_DATABASE=joplin
+      - POSTGRES_USER=joplin
+      - POSTGRES_PASSWORD=supersecret
+      - APP_PORT=6000
+      - APP_BASE_URL=http://joplin.localhost
+      - MAILER_AUTH_USER=john.m.a.schubert@gmail.com
+      - MAILER_AUTH_PASSWORD=test
+    depends_on:
+      - joplin-db
+    ports: 
+      - "80:6000"
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.joplin.rule=Host(`joplin.localhost`)"
+      - "traefik.http.routers.joplin.entrypoints=web"
+      # - "traefik.http.routers.joplin.tls=true"
+      - "traefik.http.services.joplin.loadBalancer.server.port=6000"
+
+  joplin-db:
+    image: postgres:15
+    container_name: joplin-db-prototype
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=joplin
+      - POSTGRES_PASSWORD=supersecret
+      - POSTGRES_DB=joplin
+    volumes:
+      - ./db-data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+networks:
+  backend:
+    external: true
+  frontend:
+    external: true
