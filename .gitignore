@@ -4,8 +4,6 @@
 ## Data directories
 /orchestration/authentik
 /orchestration/traefik/acme/
-/projects/
-/services/
 /vault/
 
 ## Logs
@@ -20,3 +18,4 @@
 ## Config files
 !/docker/traefik/conf/header.yml
 !/docker/traefik/traefik.yml
+!/services/docker-compose.yml
