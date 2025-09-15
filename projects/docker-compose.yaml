@@ -1,0 +1,39 @@
+services:
+  nextapp:
+    build:
+      context: ./nextapp
+      dockerfile: Dockerfile.dev
+    container_name: nextapp
+    command: npm run dev
+    restart: unless-stopped
+    volumes:
+      - ./nextapp:/app:rw
+      - /app/node_modules
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      CHOKIDAR_USEPOLLING: true
+      WATCHPACK_POLLING: true
+    ports:
+      - "3000:3000"
+    networks:
+      - frontend
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextapp.rule=Host(`nextapp.${DOMAIN}`)"
+      - "traefik.http.routers.nextapp.entrypoints=web"
+      - "traefik.http.services.nextapp.loadBalancer.server.port=3000"
+
+  nextapp-watcher:
+    image: alpine:latest
+    container_name: nextapp-watcher
+    volumes:
+      - ./nextapp:/watched:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh -c " apk add --no-cache inotify-tools && while inotifywait -r -e modify,create,delete /watched; do
+        echo 'Syncing changes into nextapp container...' &&
+        docker cp /watched/. nextapp:/app
+      done "
+    restart: unless-stopped
