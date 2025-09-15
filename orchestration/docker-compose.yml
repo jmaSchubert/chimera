@@ -13,10 +13,10 @@ networks:
     external: true
 
 ###############################
-# Compose file extensions
+# Compose file submodules
 ###############################
 include:
-  # - ../projects/docker-compose.yml
+  - ../projects/docker-compose.yaml
   # - ../services/docker-compose.yml
 
 services:
@@ -47,6 +47,9 @@ services:
       - "traefik.http.routers.traefik.entrypoints=web"
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.routers.traefik.middlewares=authentik@file"
+      - "traefik.http.services.authentik-server.loadBalancer.server.port=80"
+    ports:
+      - "80:80"
     networks:
       - frontend
       - backend
@@ -67,7 +70,7 @@ services:
         - CMD-SHELL
         - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
       timeout: 5s
-    image: docker.io/library/postgres:16-alpine
+    image: ${POSTGRES_IMAGE}
     restart: unless-stopped
     volumes:
       - database:/var/lib/postgresql/data

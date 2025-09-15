@@ -5,6 +5,7 @@
 /orchestration/authentik
 /orchestration/traefik/acme/
 /vault/
+/projects/nextapp/
 
 ## Logs
 *.log
