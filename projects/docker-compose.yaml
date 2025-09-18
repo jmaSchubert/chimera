@@ -14,16 +14,58 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       CHOKIDAR_USEPOLLING: true
       WATCHPACK_POLLING: true
+
+      DATABASE_URL: "postgresql://${NEXTAPP_DB_USER}:${NEXTAPP_DB_PASSWORD}@nextapp-db:5432/${NEXTAPP_DB_NAME}"
+
+      # NextAuth Configuration
+      NEXTAUTH_URL: "https://unmuddy-jerilyn-defamingly.ngrok-free.app"
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+
+      # OAuth Provider Configuration
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+      GITHUB_ID: "${GITHUB_ID}"
+      GITHUB_SECRET: "${GITHUB_SECRET}"
+      DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID}"
+      DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET}"
     ports:
       - "3000:3000"
     networks:
       - frontend
       - backend
+    depends_on:
+      nextapp-db:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nextapp.rule=Host(`nextapp.${DOMAIN}`)"
       - "traefik.http.routers.nextapp.entrypoints=web"
       - "traefik.http.services.nextapp.loadBalancer.server.port=3000"
+
+  nextapp-db:
+    container_name: nextapp-db
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${NEXTAPP_DB_NAME}
+      POSTGRES_USER: ${NEXTAPP_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTAPP_DB_PASSWORD}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 20s
+      test:
+        - CMD-SHELL
+        - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      timeout: 5s
+    image: ${POSTGRES_IMAGE}
+    restart: unless-stopped
+    volumes:
+      - nextapp_database:/var/lib/postgresql/data
+    networks:
+      - backend
+    ports:
+      - "5433:5432" # Different port to avoid conflicts
 
   nextapp-watcher:
     image: alpine:latest
@@ -37,3 +79,13 @@ services:
         docker cp /watched/. nextapp:/app
       done "
     restart: unless-stopped
+
+volumes:
+  nextapp_database:
+    driver: local
+
+networks:
+  frontend:
+    external: true
+  backend:
+    external: true
